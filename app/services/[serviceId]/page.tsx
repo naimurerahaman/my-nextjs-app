@@ -1,21 +1,31 @@
 "use client";
-import { useEffect, useState, use } from "react"; // Added 'use' for params
+import React, { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import axiosInstance from "@/lib/axios";
+import { validateServicePrice } from "@/lib/validation";
 
-export default function ServiceDetail({
+// FIX: Ensure proper default export
+export default function EditService({
   params,
 }: {
   params: Promise<{ serviceId: string }>;
 }) {
   const router = useRouter();
-  const { serviceId } = use(params); // Correct way to unwrap params in Next 15
-  const [service, setService] = useState<any>(null);
+  const resolvedParams = use(params); // Correct way to unwrap params in Next.js 15/16
+  const serviceId = resolvedParams.serviceId;
+
   const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState(false);
+  const [formData, setFormData] = useState({
+    serviceTitle: "",
+    description: "",
+    price: "",
+    serviceCategory: "",
+  });
+  const [errors, setErrors] = useState<any>({});
 
   useEffect(() => {
-    const fetchService = async () => {
+    const fetchServiceDetails = async () => {
       try {
         const user = JSON.parse(localStorage.getItem("user") || "{}");
         const providerId = user.providerId || user.id;
@@ -23,59 +33,157 @@ export default function ServiceDetail({
         const response = await axiosInstance.get(
           `/service-provider/services/${providerId}`,
         );
-        const foundService = response.data.find(
-          (s: any) => String(s.serviceId) === serviceId,
+        // Find by either serviceId or id
+        const service = response.data.find(
+          (s: any) => String(s.serviceId || s.id) === String(serviceId),
         );
-        setService(foundService);
-      } catch (error) {
-        console.error("Failed to fetch service:", error);
+
+        if (service) {
+          setFormData({
+            serviceTitle: service.serviceTitle || service.serviceName || "",
+            description: service.description || "",
+            price: String(service.price || ""),
+            serviceCategory: service.serviceCategory || service.category || "",
+          });
+        }
+      } catch (err) {
+        console.error("Fetch error:", err);
       } finally {
         setLoading(false);
       }
     };
-    fetchService();
+    fetchServiceDetails();
   }, [serviceId]);
 
-  if (loading)
-    return <div className="p-10 text-center">Loading details...</div>;
-  if (!service)
-    return <div className="p-10 text-center">Service not found.</div>;
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
 
-  const handleDelete = async () => {
-    if (!confirm("Are you sure?")) return;
+    const priceErr = validateServicePrice(formData.price);
+    if (priceErr) {
+      setErrors({ price: priceErr });
+      return;
+    }
+
+    setUpdating(true);
     try {
       const user = JSON.parse(localStorage.getItem("user") || "{}");
       const providerId = user.providerId || user.id;
-      // FETCH SCENARIO #5: DELETE
-      await axiosInstance.delete(
+
+      // Axios Scenario: PUT Update
+      await axiosInstance.put(
         `/service-provider/service/${providerId}/${serviceId}`,
+        {
+          serviceTitle: formData.serviceTitle,
+          description: formData.description,
+          price: Number(formData.price),
+          serviceCategory: formData.serviceCategory,
+        },
       );
-      alert("Service deleted!");
+
+      alert("Service updated successfully!");
       router.push("/dashboard");
-    } catch (err) {
-      alert("Delete failed");
+    } catch (err: any) {
+      console.error(err);
+      alert(err.response?.data?.message || "Update failed");
+    } finally {
+      setUpdating(false);
     }
   };
 
+  if (loading)
+    return (
+      <div className="p-20 text-center text-black font-bold">
+        Loading Service Data...
+      </div>
+    );
+
   return (
-    <div className="max-w-2xl mx-auto p-10">
-      <Link href="/dashboard" className="text-blue-600 mb-4 block">
-        ← Back to Dashboard
-      </Link>
-      <div className="bg-white p-8 rounded-xl shadow-lg border">
-        <h1 className="text-3xl font-bold mb-4">{service.serviceName}</h1>
-        <p className="text-gray-700 mb-6 text-lg">{service.description}</p>
-        <div className="grid grid-cols-2 gap-4 border-t pt-4">
+    <div className="max-w-2xl mx-auto bg-white p-10 rounded-3xl shadow-2xl mt-10 text-black border">
+      <h1 className="text-3xl font-black mb-8 text-blue-900 uppercase">
+        Edit Service
+      </h1>
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <div>
+          <label className="block font-bold text-gray-700 mb-2 uppercase text-xs">
+            Service Title
+          </label>
+          <input
+            type="text"
+            className="w-full border-2 border-gray-100 p-4 rounded-xl focus:border-yellow-400 outline-none transition-all"
+            value={formData.serviceTitle}
+            onChange={(e) =>
+              setFormData({ ...formData, serviceTitle: e.target.value })
+            }
+            required
+          />
+        </div>
+        <div>
+          <label className="block font-bold text-gray-700 mb-2 uppercase text-xs">
+            Description
+          </label>
+          <textarea
+            className="w-full border-2 border-gray-100 p-4 rounded-xl focus:border-yellow-400 outline-none transition-all"
+            rows={4}
+            value={formData.description}
+            onChange={(e) =>
+              setFormData({ ...formData, description: e.target.value })
+            }
+            required
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-6">
           <div>
-            <p className="text-gray-500">Price</p>
-            <p className="text-xl font-bold">৳{service.price}</p>
+            <label className="block font-bold text-gray-700 mb-2 uppercase text-xs">
+              Price (৳)
+            </label>
+            <input
+              type="text"
+              className="w-full border-2 border-gray-100 p-4 rounded-xl focus:border-yellow-400 outline-none transition-all"
+              value={formData.price}
+              onChange={(e) =>
+                setFormData({ ...formData, price: e.target.value })
+              }
+              required
+            />
+            {errors.price && (
+              <p className="text-red-500 text-xs mt-1 font-bold">
+                {errors.price}
+              </p>
+            )}
           </div>
           <div>
-            <p className="text-gray-500">Category</p>
-            <p className="text-xl font-bold">{service.category}</p>
+            <label className="block font-bold text-gray-700 mb-2 uppercase text-xs">
+              Category
+            </label>
+            <input
+              type="text"
+              className="w-full border-2 border-gray-100 p-4 rounded-xl focus:border-yellow-400 outline-none transition-all"
+              value={formData.serviceCategory}
+              onChange={(e) =>
+                setFormData({ ...formData, serviceCategory: e.target.value })
+              }
+              required
+            />
           </div>
         </div>
-      </div>
+
+        <div className="flex gap-4 pt-6">
+          <button
+            type="submit"
+            disabled={updating}
+            className="flex-[2] bg-yellow-400 text-blue-900 font-black py-4 rounded-xl hover:bg-yellow-500 shadow-lg disabled:opacity-50"
+          >
+            {updating ? "Saving Changes..." : "Update Service"}
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push("/dashboard")}
+            className="flex-1 bg-gray-100 text-gray-600 font-bold py-4 rounded-xl hover:bg-gray-200"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

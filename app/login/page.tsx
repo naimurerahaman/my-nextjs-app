@@ -31,12 +31,9 @@ export default function Login() {
 
   const validateForm = (): boolean => {
     const newErrors: any = {};
-
     const emailError = validateEmail(formData.email);
     if (emailError) newErrors.email = emailError;
-
     if (!formData.password) newErrors.password = "Password is required";
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -44,9 +41,7 @@ export default function Login() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setApiError("");
-
     if (!validateForm()) return;
-
     setLoading(true);
 
     try {
@@ -55,30 +50,30 @@ export default function Login() {
         formData,
       );
 
-      console.log("Login response:", response.data); // Debug log
-
       if (response.data.access_token) {
         localStorage.setItem("token", response.data.access_token);
 
-        // Store user data properly - check what fields are available
+        // EXTRACTION LOGIC: Handle cases where ID is nested or named 'provider'
+        const rawData = response.data;
+        const extractedId =
+          rawData.id ||
+          rawData.providerId ||
+          rawData.userId ||
+          (rawData.provider && typeof rawData.provider === "object"
+            ? rawData.provider.id
+            : rawData.provider);
+
         const userData = {
-          id:
-            response.data.id ||
-            response.data.userId ||
-            response.data.providerId ||
-            response.data._id,
-          email: response.data.email || formData.email,
-          ...response.data, // Store all other fields from response
+          ...rawData,
+          id: extractedId, // Ensure 'id' exists at the top level for our components
+          email: rawData.email || formData.email,
         };
 
-        console.log("Storing user data:", userData); // Debug log
         localStorage.setItem("user", JSON.stringify(userData));
+        alert("Login successful!");
+        router.push("/dashboard");
       }
-
-      alert("Login successful!");
-      router.push("/dashboard");
     } catch (err: any) {
-      console.error("Login error:", err); // Debug log
       if (err.response?.data?.message) {
         setApiError(err.response.data.message);
       } else {
@@ -95,16 +90,20 @@ export default function Login() {
         padding: "50px",
         maxWidth: "400px",
         margin: "0 auto",
-        background: "linear-gradient(to right, #f0f3c2ff, #eeeeee)",
         minHeight: "100vh",
+        color: "black",
       }}
     >
       <h1
-        style={{ textAlign: "center", marginBottom: "30px", color: "#1e3a8a" }}
+        style={{
+          textAlign: "center",
+          marginBottom: "30px",
+          color: "#1e3a8a",
+          color: "white",
+        }}
       >
         Login
       </h1>
-
       {apiError && (
         <div
           style={{
@@ -118,7 +117,6 @@ export default function Login() {
           {apiError}
         </div>
       )}
-
       <form onSubmit={handleLogin}>
         <div style={{ marginBottom: "15px" }}>
           <label
@@ -126,7 +124,7 @@ export default function Login() {
               display: "block",
               marginBottom: "5px",
               fontWeight: "bold",
-              color: "#1e3a8a",
+              color: "white",
             }}
           >
             Email
@@ -140,8 +138,8 @@ export default function Login() {
               width: "100%",
               padding: "12px",
               borderRadius: "5px",
-              color: "black",
-              border: errors.email ? "2px solid #c00" : "1px solid #ccc",
+              border: "1px solid #ccc",
+              color: "white",
             }}
           />
           {errors.email && (
@@ -150,14 +148,13 @@ export default function Login() {
             </span>
           )}
         </div>
-
         <div style={{ marginBottom: "20px" }}>
           <label
             style={{
               display: "block",
               marginBottom: "5px",
               fontWeight: "bold",
-              color: "#1e3a8a",
+              color: "white",
             }}
           >
             Password
@@ -171,8 +168,8 @@ export default function Login() {
               width: "100%",
               padding: "12px",
               borderRadius: "5px",
-              color: "black",
-              border: errors.password ? "2px solid #c00" : "1px solid #ccc",
+              border: "1px solid #ccc",
+              color: "white",
             }}
           />
           {errors.password && (
@@ -181,29 +178,24 @@ export default function Login() {
             </span>
           )}
         </div>
-
         <button
           type="submit"
           disabled={loading}
           style={{
             width: "100%",
             padding: "14px",
-            background: loading
-              ? "#ccc"
-              : "linear-gradient(to right, #fcd600, #fccf00)",
+            background: "#fcd600",
             color: "black",
             border: "none",
-            cursor: loading ? "not-allowed" : "pointer",
+            cursor: "pointer",
             borderRadius: "5px",
             fontWeight: "bold",
-            fontSize: "16px",
           }}
         >
           {loading ? "Logging in..." : "Login"}
         </button>
       </form>
-
-      <p style={{ marginTop: "20px", textAlign: "center" }}>
+      <p style={{ mt: "20px", textAlign: "center" }}>
         <Link href="/register" style={{ color: "#06c" }}>
           Need an account? Register
         </Link>

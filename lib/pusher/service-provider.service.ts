@@ -13,7 +13,13 @@ export class ServiceProviderService {
     });
   }
 
-  // When a new order is created (you can add this later)
+  // When a new service is added
+  async notifyServiceCreated(providerId: string, serviceName: string) {
+    await this.pusher.trigger(`provider-${providerId}`, "service-created", {
+      message: `Your new service "${serviceName}" is now live!`,
+    });
+  }
+
   async notifyProvider(providerId: number, message: string) {
     await this.pusher.trigger(`provider-${providerId}`, "new-order", {
       orderDetails: message,

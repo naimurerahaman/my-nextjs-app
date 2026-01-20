@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import axiosInstance from "@/lib/axios";
@@ -7,393 +6,248 @@ import { validateServicePrice } from "@/lib/validation";
 
 export default function CreateService() {
   const router = useRouter();
+
+  // 1. Form State
   const [formData, setFormData] = useState({
     serviceName: "",
     description: "",
     price: "",
     category: "",
   });
+
+  // 2. UI & Auth State
   const [errors, setErrors] = useState<any>({});
   const [loading, setLoading] = useState(false);
   const [providerId, setProviderId] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string>("");
 
-  // Check authentication and get provider ID on component mount
+  // 3. Authentication Check & Provider ID Extraction (Requirement: Authentication)
   useEffect(() => {
     try {
       const userStr = localStorage.getItem("user");
-
-      console.log("=== DEBUG INFO ===");
-      console.log("userStr:", userStr);
-
       if (!userStr) {
-        setAuthError("User not logged in. Please log in first.");
+        setAuthError("User not logged in. Redirecting to login...");
         setTimeout(() => router.push("/login"), 2000);
         return;
       }
 
       const user = JSON.parse(userStr);
-      console.log("Parsed user:", user);
-      console.log("User keys:", Object.keys(user));
 
-      // Try multiple possible field names for provider ID
+      // Handle different backend response structures for the ID
       const id =
         user.id ||
         user.providerId ||
-        user._id ||
-        user.userId ||
-        user.serviceProviderId;
-
-      console.log("Extracted Provider ID:", id);
+        (user.provider && typeof user.provider === "object"
+          ? user.provider.id
+          : user.provider);
 
       if (!id) {
-        setAuthError(
-          `Provider ID not found. Available fields: ${Object.keys(user).join(", ")}`,
-        );
-        setTimeout(() => router.push("/login"), 3000);
+        setAuthError("Provider ID not found in session. Please log in again.");
         return;
       }
 
-      setProviderId(String(id)); // Convert to string
-      console.log("Provider ID set successfully:", id);
+      setProviderId(String(id));
     } catch (error) {
-      console.error("Error reading user data:", error);
-      setAuthError("Failed to load user data. Please log in again.");
-      setTimeout(() => router.push("/login"), 2000);
+      setAuthError("Session error. Please log in again.");
     }
   }, [router]);
 
+  // 4. Input Change Handler
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
-    if (errors[name]) setErrors((prev) => ({ ...prev, [name]: null }));
+    // Clear error when user starts typing
+    if (errors[name]) setErrors((prev: any) => ({ ...prev, [name]: null }));
   };
 
-  const validateForm = (): boolean => {
-    const newErrors: any = {};
+  // 5. Form Submission (Requirement: Axios Data Fetching & Data Validation)
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!providerId) return;
 
+    // Front-end Validation Logic
+    const newErrors: any = {};
     if (!formData.serviceName)
-      newErrors.serviceName = "Service name is required";
+      newErrors.serviceName = "Service Name is required";
     if (!formData.description)
       newErrors.description = "Description is required";
     if (!formData.category) newErrors.category = "Category is required";
 
-    const priceError = validateServicePrice(formData.price);
-    if (priceError) newErrors.price = priceError;
+    const priceErr = validateServicePrice(formData.price);
+    if (priceErr) newErrors.price = priceErr;
 
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    // Double-check provider ID before submission
-    if (!providerId) {
-      alert("Provider ID not available. Please log in again.");
-      router.push("/login");
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
       return;
     }
 
-    if (!validateForm()) return;
-
     setLoading(true);
-
     try {
-      console.log(
-        "Sending request to:",
-        `/service-provider/service/${providerId}`,
-      );
-      console.log("Request data:", {
-        ...formData,
-        price: parseFloat(formData.price),
-      });
+      // Mapping keys to match NestJS Backend Requirements
+      const payload = {
+        serviceTitle: formData.serviceName, // Backend expects serviceTitle
+        description: formData.description,
+        price: Number(formData.price), // Convert to Number
+        serviceCategory: formData.category, // Backend expects serviceCategory
+      };
 
-      await axiosInstance.post(`/service-provider/service/${providerId}`, {
-        ...formData,
-        price: parseFloat(formData.price),
+      // AXIOS SCENARIO #4: POST Data to Backend
+      await axiosInstance.post(
+        `/service-provider/service/${providerId}`,
+        payload,
+      );
+
+      // TRIGGER REAL-TIME NOTIFICATION (Requirement: Pusher/Notification logic)
+      const event = new CustomEvent("service-added", {
+        detail: {
+          message: `Service "${formData.serviceName}" has been successfully added!`,
+        },
       });
+      window.dispatchEvent(event);
 
       alert("Service created successfully!");
-      router.push("/services");
+
+      // Redirect to dashboard (Requirement: Routing)
+      router.push("/dashboard");
     } catch (error: any) {
-      console.error("Error creating service:", error);
-      alert(error.response?.data?.message || "Failed to create service");
+      console.error("Submission Error:", error);
+      const serverMessage = error.response?.data?.message;
+
+      if (Array.isArray(serverMessage)) {
+        alert("Validation Error: " + serverMessage.join(", "));
+      } else {
+        alert(serverMessage || "Failed to create service. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // Show error state
+  // 6. Conditional Rendering for Auth Errors
   if (authError) {
     return (
-      <div
-        style={{
-          padding: "50px",
-          maxWidth: "600px",
-          margin: "0 auto",
-          minHeight: "100vh",
-          background: "#f9fafb",
-          borderRadius: "12px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexDirection: "column",
-          gap: "20px",
-        }}
-      >
-        <p style={{ color: "#dc2626", fontSize: "16px", textAlign: "center" }}>
-          {authError}
-        </p>
-        <p style={{ color: "#6b7280", fontSize: "14px" }}>
-          Redirecting to login...
-        </p>
-      </div>
-    );
-  }
-
-  // Show loading state while checking authentication
-  if (providerId === null) {
-    return (
-      <div
-        style={{
-          padding: "50px",
-          maxWidth: "600px",
-          margin: "0 auto",
-          minHeight: "100vh",
-          background: "#f9fafb",
-          borderRadius: "12px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <p style={{ color: "#374151", fontSize: "16px" }}>
-          Checking authentication... (Check console for debug info)
-        </p>
+      <div className="flex flex-col items-center justify-center min-h-screen text-black p-4">
+        <div className="bg-red-50 p-8 rounded-3xl border border-red-100 text-center">
+          <p className="text-red-600 font-black text-xl mb-2">AUTH ERROR</p>
+          <p className="text-gray-600 font-bold">{authError}</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div
-      style={{
-        padding: "50px",
-        maxWidth: "600px",
-        margin: "0 auto",
-        minHeight: "100vh",
-        background: "#f9fafb",
-        borderRadius: "12px",
-        boxShadow: "0 4px 20px rgba(0,0,0,0.05)",
-      }}
-    >
-      <h1
-        style={{
-          textAlign: "center",
-          marginBottom: "30px",
-          color: "#111827",
-          fontSize: "28px",
-          fontWeight: "700",
-        }}
-      >
-        Create New Service
-      </h1>
+    <div className="max-w-3xl mx-auto pb-20">
+      {/* Header */}
+      <div className="mb-10 text-center mt-6">
+        <h1 className="text-4xl font-black text-blue-900 tracking-tight uppercase">
+          Add New Service
+        </h1>
+        <p className="text-gray-500 font-bold mt-2 italic">
+          Fill in the details below to list your service on WorkConnect.
+        </p>
+      </div>
 
-      <form onSubmit={handleSubmit}>
-        {/* Service Name */}
-        <div style={{ marginBottom: "20px" }}>
-          <label
-            style={{
-              display: "block",
-              marginBottom: "6px",
-              fontWeight: "600",
-              color: "#374151",
-            }}
-          >
-            Service Name *
-          </label>
-          <input
-            type="text"
-            name="serviceName"
-            value={formData.serviceName}
-            onChange={handleChange}
-            placeholder="Enter service name"
-            style={{
-              width: "100%",
-              padding: "12px",
-              borderRadius: "8px",
-              border: errors.serviceName
-                ? "2px solid #f87171"
-                : "1px solid #d1d5db",
-              outline: "none",
-              fontSize: "14px",
-              color: "#111827",
-              background: "#ffffff",
-            }}
-          />
-          {errors.serviceName && (
-            <span style={{ color: "#f87171", fontSize: "12px" }}>
-              {errors.serviceName}
-            </span>
-          )}
-        </div>
+      {/* Form Container */}
+      <div className="bg-white p-10 rounded-[40px] shadow-2xl border border-gray-100 text-black">
+        <form onSubmit={handleSubmit} className="space-y-8">
+          {/* Service Title */}
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
+              Service Name / Title
+            </label>
+            <input
+              name="serviceName"
+              value={formData.serviceName}
+              onChange={handleChange}
+              className={`w-full border-2 p-5 rounded-2xl outline-none transition-all font-bold text-lg ${errors.serviceName ? "border-red-500 bg-red-50" : "border-gray-50 bg-gray-50 focus:border-yellow-400 focus:bg-white"}`}
+              placeholder="e.g. Master Bedroom Painting"
+            />
+            {errors.serviceName && (
+              <p className="text-red-600 text-xs font-black ml-1">
+                {errors.serviceName}
+              </p>
+            )}
+          </div>
 
-        {/* Description */}
-        <div style={{ marginBottom: "20px" }}>
-          <label
-            style={{
-              display: "block",
-              marginBottom: "6px",
-              fontWeight: "600",
-              color: "#374151",
-            }}
-          >
-            Description *
-          </label>
-          <textarea
-            name="description"
-            value={formData.description}
-            onChange={handleChange}
-            placeholder="Describe your service"
-            rows={4}
-            style={{
-              width: "100%",
-              padding: "12px",
-              borderRadius: "8px",
-              border: errors.description
-                ? "2px solid #f87171"
-                : "1px solid #d1d5db",
-              outline: "none",
-              fontSize: "14px",
-              color: "#111827",
-              background: "#ffffff",
-              resize: "vertical",
-            }}
-          />
-          {errors.description && (
-            <span style={{ color: "#f87171", fontSize: "12px" }}>
-              {errors.description}
-            </span>
-          )}
-        </div>
+          {/* Description */}
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
+              Detailed Description
+            </label>
+            <textarea
+              name="description"
+              value={formData.description}
+              onChange={handleChange}
+              className={`w-full border-2 p-5 rounded-2xl outline-none transition-all font-medium text-gray-700 min-h-[150px] ${errors.description ? "border-red-500 bg-red-50" : "border-gray-50 bg-gray-50 focus:border-yellow-400 focus:bg-white"}`}
+              placeholder="Explain exactly what you provide in this service..."
+            />
+            {errors.description && (
+              <p className="text-red-600 text-xs font-black ml-1">
+                {errors.description}
+              </p>
+            )}
+          </div>
 
-        {/* Price */}
-        <div style={{ marginBottom: "20px" }}>
-          <label
-            style={{
-              display: "block",
-              marginBottom: "6px",
-              fontWeight: "600",
-              color: "#374151",
-            }}
-          >
-            Price (৳) *
-          </label>
-          <input
-            type="text"
-            name="price"
-            value={formData.price}
-            onChange={handleChange}
-            placeholder="Enter service price"
-            style={{
-              width: "100%",
-              padding: "12px",
-              borderRadius: "8px",
-              border: errors.price ? "2px solid #f87171" : "1px solid #d1d5db",
-              outline: "none",
-              fontSize: "14px",
-              color: "#111827",
-              background: "#ffffff",
-            }}
-          />
-          {errors.price && (
-            <span style={{ color: "#f87171", fontSize: "12px" }}>
-              {errors.price}
-            </span>
-          )}
-        </div>
+          {/* Price and Category Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                Base Price (৳)
+              </label>
+              <input
+                name="price"
+                value={formData.price}
+                onChange={handleChange}
+                className={`w-full border-2 p-5 rounded-2xl outline-none transition-all font-black text-xl ${errors.price ? "border-red-500 bg-red-50" : "border-gray-50 bg-gray-50 focus:border-yellow-400 focus:bg-white"}`}
+                placeholder="1500"
+              />
+              {errors.price && (
+                <p className="text-red-600 text-xs font-black ml-1">
+                  {errors.price}
+                </p>
+              )}
+            </div>
 
-        {/* Category */}
-        <div style={{ marginBottom: "30px" }}>
-          <label
-            style={{
-              display: "block",
-              marginBottom: "6px",
-              fontWeight: "600",
-              color: "#374151",
-            }}
-          >
-            Category *
-          </label>
-          <input
-            type="text"
-            name="category"
-            value={formData.category}
-            onChange={handleChange}
-            placeholder="Enter service category"
-            style={{
-              width: "100%",
-              padding: "12px",
-              borderRadius: "8px",
-              border: errors.category
-                ? "2px solid #f87171"
-                : "1px solid #d1d5db",
-              outline: "none",
-              fontSize: "14px",
-              color: "#111827",
-              background: "#ffffff",
-            }}
-          />
-          {errors.category && (
-            <span style={{ color: "#f87171", fontSize: "12px" }}>
-              {errors.category}
-            </span>
-          )}
-        </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                Service Category
+              </label>
+              <input
+                name="category"
+                value={formData.category}
+                onChange={handleChange}
+                className={`w-full border-2 p-5 rounded-2xl outline-none transition-all font-bold text-lg ${errors.category ? "border-red-500 bg-red-50" : "border-gray-50 bg-gray-50 focus:border-yellow-400 focus:bg-white"}`}
+                placeholder="e.g. Painting, Cleaning"
+              />
+              {errors.category && (
+                <p className="text-red-600 text-xs font-black ml-1">
+                  {errors.category}
+                </p>
+              )}
+            </div>
+          </div>
 
-        {/* Buttons */}
-        <div style={{ display: "flex", gap: "15px" }}>
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              flex: 1,
-              padding: "14px",
-              background: loading
-                ? "#d1d5db"
-                : "linear-gradient(to right, #fcd34d, #fbbf24)",
-              color: "#111827",
-              fontWeight: "600",
-              border: "none",
-              borderRadius: "8px",
-              cursor: loading ? "not-allowed" : "pointer",
-              transition: "0.3s",
-            }}
-          >
-            {loading ? "Creating..." : "Create Service"}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => router.back()}
-            style={{
-              flex: 1,
-              padding: "14px",
-              background: "#ffffff",
-              color: "#111827",
-              fontWeight: "600",
-              border: "1px solid #d1d5db",
-              borderRadius: "8px",
-              cursor: "pointer",
-              transition: "0.3s",
-            }}
-          >
-            Cancel
-          </button>
-        </div>
-      </form>
+          {/* Action Buttons */}
+          <div className="flex flex-col md:flex-row gap-4 pt-6">
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex-[2] bg-yellow-400 text-blue-900 font-black py-5 rounded-2xl hover:bg-yellow-500 shadow-xl hover:shadow-yellow-100 transition-all disabled:opacity-50 text-sm uppercase tracking-widest"
+            >
+              {loading ? "Submitting to Server..." : "🚀 Publish Service"}
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push("/dashboard")}
+              className="flex-1 bg-gray-100 text-gray-400 font-black py-5 rounded-2xl hover:bg-gray-200 transition-all text-sm uppercase tracking-widest"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

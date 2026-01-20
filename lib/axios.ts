@@ -1,15 +1,18 @@
 import axios from "axios";
 
 const axiosInstance = axios.create({
-  baseURL: "http://localhost:3001", // Point this to your NestJS Backend
+  // FIX: Pointing to port 3000 (standard NestJS port)
+  // while your Next.js app runs on 3001
+  baseURL: "http://localhost:3000",
   headers: { "Content-Type": "application/json" },
 });
 
 axiosInstance.interceptors.request.use((config) => {
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  if (typeof window !== "undefined") {
+    const token = localStorage.getItem("token");
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
   }
   return config;
 });
