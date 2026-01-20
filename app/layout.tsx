@@ -1,8 +1,8 @@
 import "./globals.css";
+import Navbar from "@/components/layout/Navbar"; // Ensure this matches the file path exactly
 
 export const metadata = {
-  title: "WorkConnect - Service Provider",
-  description: "Service Provider Dashboard",
+  title: "WorkConnect",
 };
 
 export default function RootLayout({
@@ -12,7 +12,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <Navbar />
+        {children}
+      </body>
     </html>
   );
 }
